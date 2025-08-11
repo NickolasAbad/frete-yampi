@@ -121,6 +121,17 @@ app.get('/auth/callback', async (req, res) => {
 
 // ===== verify proxy + cálculo de frete =====
 const proxyPath = `/${SHOPIFY_APP_PROXY_PREFIX}/${SHOPIFY_APP_PROXY_SUBPATH}`;
+app.all('/apps/shipping-quotes', async (req, res) => {
+    const cep = req.query.cep;
+    const skus = req.query.skus?.split(',') || [];
+    const quantities = req.query.quantities?.split(',').map(q => parseInt(q, 10)) || [];
+    const total = parseFloat(req.query.total) || 0;
+    const orderId = req.query.order_id || '129339217';
+  
+    // Aqui chama a função que consulta a API da Yampi
+    const fretes = await calcularFreteYampi(cep, skus, quantities, total, orderId);
+    res.json(fretes);
+  });
 app.all(proxyPath, async (req, res) => {
   try {
     if (DISABLE_PROXY_SIGNATURE_CHECK !== 'true') {
