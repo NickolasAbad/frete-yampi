@@ -79,19 +79,6 @@ app.all('/apps/shipping-quotes', async (req, res) => {
       res.status(500).json({ error: err.message });
     }
   });
-app.get('/', (req, res) => {
-  res.type('html').send(`<!doctype html><html><body>
-  <h1>Frete Yampi App</h1>
-  <p>Use <code>/install?shop=loja.myshopify.com</code> para instalar.</p>
-  </body></html>`);
-});
-
-app.get('/installed', (req, res) => {
-  res.type('html').send(`<!doctype html><html><body>
-  <h2>App instalado ✅</h2>
-  <p>O proxy está pronto em <code>/${SHOPIFY_APP_PROXY_PREFIX}/${SHOPIFY_APP_PROXY_SUBPATH}</code>.</p>
-  </body></html>`);
-});
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
@@ -135,17 +122,6 @@ app.get('/auth/callback', async (req, res) => {
 
 // ===== verify proxy + cálculo de frete =====
 const proxyPath = `/${SHOPIFY_APP_PROXY_PREFIX}/${SHOPIFY_APP_PROXY_SUBPATH}`;
-app.all('/apps/shipping-quotes', async (req, res) => {
-    const cep = req.query.cep;
-    const skus = req.query.skus?.split(',') || [];
-    const quantities = req.query.quantities?.split(',').map(q => parseInt(q, 10)) || [];
-    const total = parseFloat(req.query.total) || 0;
-    const orderId = req.query.order_id || '129339217';
-  
-    // Aqui chama a função que consulta a API da Yampi
-    const fretes = await calcularFreteYampi(cep, skus, quantities, total, orderId);
-    res.json(fretes);
-  });
 app.all(proxyPath, async (req, res) => {
   try {
     if (DISABLE_PROXY_SIGNATURE_CHECK !== 'true') {
