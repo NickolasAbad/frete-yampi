@@ -9,6 +9,7 @@ import { YampiSkuMap } from './yampiCatalog.js';
 
 const app = express();
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 
 const {
@@ -124,44 +125,53 @@ app.get('/auth/callback', async (req, res) => {
 const proxyPath = `/${SHOPIFY_APP_PROXY_PREFIX}/${SHOPIFY_APP_PROXY_SUBPATH}`;
 app.all(proxyPath, async (req, res) => {
   try {
+    // 1) Verificar assinatura do App Proxy (mantém como está)
     if (DISABLE_PROXY_SIGNATURE_CHECK !== 'true') {
       const ok = verifyShopifyProxy(req.query, SHOPIFY_API_SECRET);
       if (!ok) return res.status(401).json({ error: 'Invalid proxy signature' });
     }
 
-    const cep = String((req.method === 'GET' ? req.query.cep : req.body.cep) || '').replace(/\D/g, '');
+    // 2) Mescla query + body (App Proxy pode mandar POST form-url-encoded com qs)
+    const p = { ...(req.query || {}), ...(req.body || {}) };
+
+    // 3) Inputs
+    const cep = String(p.cep || '').replace(/\D/g, '');
     if (cep.length !== 8) return res.status(400).json({ error: 'CEP inválido' });
 
-    const totalParam = (req.method === 'GET' ? req.query.total : req.body.total);
-    const total = totalParam != null ? Number(totalParam) : undefined;
+    const total = p.total != null ? Number(p.total) : undefined;
 
-    let skusRaw = (req.method === 'GET' ? (req.query.skus ?? req.query.skus_ids) : (req.body.skus ?? req.body.skus_ids));
-    let quantitiesRaw = (req.method === 'GET' ? req.query.quantities : req.body.quantities);
-    const toArr = (v) => Array.isArray(v) ? v : (v == null ? [] : String(v).split(',').map(s => s.trim()).filter(Boolean));
-    const skusArr = toArr(skusRaw);
-    const qtyArr = toArr(quantitiesRaw).map(Number);
+    const toArr = (v) =>
+      Array.isArray(v) ? v : (v == null ? [] : String(v).split(',').map(s => s.trim()).filter(Boolean));
+
+    const skusArr = toArr(p.skus ?? p.skus_ids);   // aceita skus textuais OU ids numéricos
+    const qtyArr  = toArr(p.quantities).map(Number);
+
     if (!skusArr.length || skusArr.length !== qtyArr.length) {
       return res.status(400).json({ error: 'Itens ausentes ou mal formatados' });
     }
 
+    // 4) Resolver IDs numéricos para a Yampi
     const ids = [];
     for (const s of skusArr) {
-      if (/^\d+$/.test(s)) ids.push(Number(s)); else {
+      if (/^\d+$/.test(s)) {
+        ids.push(Number(s)); // já é ID numérico
+      } else {
         const id = skuMap.getId(s);
         if (!id) return res.status(400).json({ error: `SKU sem ID cadastrado na Yampi: ${s}` });
         ids.push(id);
       }
     }
 
+    // 5) Cache (opcional, igual ao seu)
     const key = cacheKey({ cep, ids, qtys: qtyArr, total });
     const cached = quoteCache.get(key);
-    if (cached && (Date.now() - cached.at) < (Number(CACHE_TTL_MS)||300000)) {
+    const ttl = Number(CACHE_TTL_MS) || 300000;
+    if (cached && (Date.now() - cached.at) < ttl) {
       return res.json({ data: cached.data, cached: true });
     }
 
-    // order_id fixo – ajuste aqui se quiser
+    // 6) Chamada Yampi (order_id fixo)
     const ORDER_ID_HARDCODED = 129339217;
-
     const raw = await calcularFreteYampi({
       alias: YAMPI_ALIAS,
       zipcode: cep,
@@ -171,6 +181,7 @@ app.all(proxyPath, async (req, res) => {
       orderId: ORDER_ID_HARDCODED
     });
 
+    // 7) Normaliza para array e responde
     const data = Array.isArray(raw) ? raw : (raw && typeof raw === 'object' ? Object.values(raw) : []);
     quoteCache.set(key, { at: Date.now(), data });
     return res.json({ data });
