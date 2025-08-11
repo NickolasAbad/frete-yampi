@@ -65,6 +65,20 @@ const TTL = Number(CACHE_TTL_MS) || 300000;
 const cacheKey = (x) => JSON.stringify(x);
 
 // ===== páginas básicas =====
+app.all('/apps/shipping-quotes', async (req, res) => {
+    try {
+      const cep = req.query.cep;
+      const skus = req.query.skus?.split(',') || [];
+      const quantities = req.query.quantities?.split(',').map(q => parseInt(q, 10)) || [];
+      const total = parseFloat(req.query.total) || 0;
+      const orderId = req.query.order_id || '129339217';
+  
+      const fretes = await calcularFreteYampi(cep, skus, quantities, total, orderId);
+      res.status(200).json(fretes);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
 app.get('/', (req, res) => {
   res.type('html').send(`<!doctype html><html><body>
   <h1>Frete Yampi App</h1>
